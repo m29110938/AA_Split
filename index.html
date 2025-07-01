@@ -1,0 +1,310 @@
+<?php
+session_start();
+if (isset($_SESSION['msg'])) {
+  $msg = $_SESSION['msg'];
+  unset($_SESSION['msg']);
+}
+
+
+// 確保 data 資料夾存在
+if (!file_exists('data')) mkdir('data', 0777, true);
+
+// 清空全部帳目
+if (isset($_POST['clearAll'])) {
+  $bill_files = glob("data/bill_*.json");
+  foreach ($bill_files as $file) {
+    unlink($file);
+  }
+  $msg = "已清空所有帳目紀錄";
+  session_start();
+  $_SESSION['msg'] = $msg;
+  header("Location: index.php");
+  exit;
+}
+
+
+// 刪除單筆帳目
+if (isset($_POST['deleteBill'])) {
+  $filename = $_POST['deleteBill'];
+  if (file_exists($filename)) {
+    unlink($filename);
+    $msg = "已刪除帳目紀錄";
+  }
+  session_start();
+  $_SESSION['msg'] = $msg;
+  header("Location: index.php");
+  exit;
+}
+
+
+// 新增人員
+if (isset($_POST['addPerson'])) {
+  $name = trim($_POST['personName']);
+  if ($name !== '') {
+    $filename = "data/person_{$name}.json";
+    if (!file_exists($filename)) {
+      file_put_contents($filename, json_encode(['name' => $name], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+      $msg = "已建立人員檔案：$name";
+    } else {
+      $msg = "人員檔案已存在：$name";
+    }
+    // PRG 解法：儲存 msg 至 session 並 redirect
+    session_start();
+    $_SESSION['msg'] = $msg;
+    header("Location: index.php");
+    exit;
+  }
+}
+
+
+// 新增帳目
+if (isset($_POST['addBill'])) {
+  $purpose = trim($_POST['purpose']);
+  $amount = floatval($_POST['amount']);
+  $payer = $_POST['payer'];
+  $included = $_POST['included'] ?? [];
+
+  if ($purpose && $amount && $payer && count($included) > 0) {
+    $bill = [
+      'purpose' => $purpose,
+      'amount' => $amount,
+      'payer' => $payer,
+      'included' => $included,
+      'time' => date("Y-m-d H:i:s")
+    ];
+    $filename = "data/bill_" . time() . ".json";
+    file_put_contents($filename, json_encode($bill, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $msg = "已新增帳目：$purpose";
+  } else {
+    $msg = "請填寫完整資料";
+  }
+  session_start();
+  $_SESSION['msg'] = $msg;
+  header("Location: index.php");
+  exit;
+}
+
+
+// 讀取現有人員
+$people_files = glob("data/person_*.json");
+$people = [];
+foreach ($people_files as $file) {
+  $data = json_decode(file_get_contents($file), true);
+  if ($data) $people[] = $data['name'];
+}
+
+// 讀取所有帳目
+$bill_files = glob("data/bill_*.json");
+$bills = [];
+foreach ($bill_files as $file) {
+  $bills[] = json_decode(file_get_contents($file), true);
+}
+
+// 運算分帳
+$balance = [];
+foreach ($people as $p) $balance[$p] = 0;
+
+foreach ($bills as $b) {
+  $share = $b['amount'] / count($b['included']);
+  foreach ($b['included'] as $p) {
+    if ($p != $b['payer']) {
+      $balance[$p] -= $share;
+      $balance[$b['payer']] += $share;
+    }
+  }
+}
+
+// 產生還款建議
+$owes = [];
+$gains = [];
+foreach ($balance as $p => $amt) {
+  if ($amt < -0.01) $owes[] = ['name' => $p, 'amt' => -$amt];
+  if ($amt > 0.01) $gains[] = ['name' => $p, 'amt' => $amt];
+}
+
+$settlement = [];
+while (count($owes) && count($gains)) {
+  usort($owes, fn($a, $b) => $b['amt'] - $a['amt']);
+  usort($gains, fn($a, $b) => $b['amt'] - $a['amt']);
+  $o = &$owes[0];
+  $g = &$gains[0];
+  $pay = min($o['amt'], $g['amt']);
+
+  $settlement[] = "{$o['name']} 付 " . number_format($pay, 2) . " 給 {$g['name']}";
+
+  $o['amt'] -= $pay;
+  $g['amt'] -= $pay;
+
+  if ($o['amt'] < 0.01) array_shift($owes);
+  if ($g['amt'] < 0.01) array_shift($gains);
+}
+?>
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>AA制還款計算 (PHP)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <script>
+    function toggleAll(source) {
+      const checkboxes = document.getElementsByName('included[]');
+      const labels = document.querySelectorAll('label.btn');
+      for (let i = 0; i < checkboxes.length; i++) {
+        checkboxes[i].checked = source.checked;
+      }
+    }
+  </script>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- PWA iOS 支援 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="AA Split">
+
+  <!-- icon.png -->
+  <link rel="apple-touch-icon" href="icon.png">
+
+  <!-- sw.js 註冊 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log('Service Worker registered.', reg))
+        .catch(err => console.log('Service Worker registration failed.', err));
+    }
+  </script>
+</head>
+
+<body class="p-4">
+  <div class="container">
+    <h2 class="mb-4">AA制還款計算工具</h2>
+
+    <?php if (isset($msg)): ?>
+      <div class="alert alert-info"><?= $msg ?></div>
+    <?php endif; ?>
+
+    <div class="card mb-4">
+      <div class="card-header">新增人員</div>
+      <div class="card-body">
+        <form method="post" class="row g-3">
+          <div class="col-auto">
+            <input type="text" name="personName" class="form-control" placeholder="輸入姓名" required>
+          </div>
+          <div class="col-auto">
+            <button type="submit" name="addPerson" class="btn btn-primary">新增人員</button>
+          </div>
+        </form>
+        <ul class="mt-3">
+          <?php foreach ($people as $p): ?>
+            <li><?= htmlspecialchars($p) ?></li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">新增帳目</div>
+      <div class="card-body">
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">用途</label>
+            <input type="text" name="purpose" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">金額</label>
+            <input type="number" name="amount" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label d-block">付款人</label>
+            <div class="btn-group" role="group">
+              <?php foreach ($people as $p): ?>
+                <input type="radio" class="btn-check" name="payer" value="<?= htmlspecialchars($p) ?>" id="payer_<?= htmlspecialchars($p) ?>" required>
+                <label class="btn btn-outline-success" for="payer_<?= htmlspecialchars($p) ?>"><?= htmlspecialchars($p) ?></label>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">包含人員</label><br>
+            <div class="btn-group" role="group">
+              <input type="checkbox" class="btn-check" id="checkAll" onclick="toggleAll(this)">
+              <label class="btn btn-outline-secondary" for="checkAll">全選</label>
+            </div>
+            <div class="btn-group" role="group">
+              <?php foreach ($people as $p): ?>
+                <input type="checkbox" class="btn-check" name="included[]" value="<?= htmlspecialchars($p) ?>" id="check_<?= htmlspecialchars($p) ?>">
+                <label class="btn btn-outline-primary" for="check_<?= htmlspecialchars($p) ?>"><?= htmlspecialchars($p) ?></label>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <button type="submit" name="addBill" class="btn btn-success">新增帳目</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">還款結果</div>
+      <div class="card-body">
+        <h5>每人餘額</h5>
+        <ul>
+          <?php foreach ($balance as $p => $amt): ?>
+            <li><?= htmlspecialchars($p) ?>: <?= number_format($amt, 2) ?></li>
+          <?php endforeach; ?>
+        </ul>
+        <h5 class="mt-3">還款建議</h5>
+        <ul>
+          <?php foreach ($settlement as $s): ?>
+            <li><?= $s ?></li>
+          <?php endforeach; ?>
+        </ul>
+      </div>
+    </div>
+
+
+    <div class="card mb-4">
+      <div class="card-header">記帳紀錄</div>
+      <div class="card-body">
+        <form method="post" onsubmit="return confirm('確定清空所有帳目紀錄？')">
+          <button type="submit" name="clearAll" class="btn btn-sm btn-warning mb-2">清空全部紀錄</button>
+        </form>
+        <?php if (count($bills) > 0): ?>
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>時間</th>
+                <th>用途</th>
+                <th>金額</th>
+                <th>付款人</th>
+                <th>包含人員</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($bills as $b): ?>
+                <tr>
+                  <td><?= htmlspecialchars($b['time'] ?? '') ?></td>
+                  <td><?= htmlspecialchars($b['purpose']) ?></td>
+                  <td><?= number_format($b['amount'], 2) ?></td>
+                  <td><?= htmlspecialchars($b['payer']) ?></td>
+                  <td><?= implode(", ", array_map('htmlspecialchars', $b['included'])) ?></td>
+                  <td>
+                    <form method="post" style="display:inline;">
+                      <input type="hidden" name="deleteBill" value="<?= htmlspecialchars($bill_files[array_search($b, $bills)]) ?>">
+                      <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('確定刪除此筆紀錄？')">刪除</button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php else: ?>
+          <p>目前尚無任何記帳紀錄。</p>
+        <?php endif; ?>
+      </div>
+    </div>
+
+
+  </div>
+</body>
+
+</html>
