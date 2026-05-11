@@ -1,47 +1,201 @@
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="h4 mb-0 text-primary">💰 AA 分帳小幫手</h2>
-        <button id="clearAllBtn" class="btn btn-outline-danger btn-sm">重置</button>
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>AA 分帳小幫手</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <link rel="manifest" href="manifest.json">
+
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="AA Split" />
+  <link rel="apple-touch-icon" href="icon.png" />
+
+  <style>
+    :root {
+      --bs-primary: #0d6efd;
+      --bs-success: #198754;
+    }
+
+    body {
+      background-color: #f0f2f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .container {
+      max-width: 600px;
+    }
+
+    .card {
+      border: none;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .card-header {
+      background-color: #fff;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      font-weight: 700;
+      padding: 1.25rem;
+    }
+
+    /* 修正人員標籤排版 */
+    #peopleList {
+      min-height: 40px;
+    }
+
+    .badge {
+      font-weight: 500;
+      font-size: 0.9rem;
+      border-radius: 8px;
+    }
+
+    /* 讓按鈕組在手機上更好點擊 */
+    .btn-check + .btn {
+      border-radius: 10px;
+      padding: 8px 16px;
+      transition: all 0.2s;
+    }
+
+    /* 調整帳目明細樣式 */
+    .list-group-item {
+      padding: 1rem 1.25rem;
+      border-left: none;
+      border-right: none;
+    }
+
+    .delete-btn {
+      color: #dee2e6;
+      transition: color 0.2s;
+    }
+
+    .delete-btn:hover {
+      color: #dc3545;
+    }
+
+    /* 底部陰影與動畫 */
+    .sticky-bottom-action {
+      background: linear-gradient(to top, rgba(240, 242, 245, 1), rgba(240, 242, 245, 0));
+      padding: 20px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container py-4">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4 px-2">
+      <h1 class="h3 mb-0 fw-bold text-dark">💰 AA 分帳小幫手</h1>
+      <button id="clearAllBtn" class="btn btn-outline-danger btn-sm rounded-pill px-3">重置資料</button>
     </div>
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white fw-bold">👥 參與人員</div>
-        <div class="card-body">
-            <form id="addPersonForm" class="input-group mb-3">
-                <input type="text" id="personName" class="form-control" placeholder="輸入姓名並按新增" required />
-                <button type="submit" class="btn btn-primary">新增</button>
-            </form>
-            <div id="peopleList" class="d-flex flex-wrap gap-2"></div>
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <span class="me-2">👥</span> 參與人員
+      </div>
+      <div class="card-body">
+        <form id="addPersonForm" class="input-group mb-3">
+          <input type="text" id="personName" class="form-control border-end-0 shadow-none" placeholder="輸入姓名..." required />
+          <button type="submit" class="btn btn-primary px-4 fw-bold">新增</button>
+        </form>
+        <div id="peopleList" class="d-flex flex-wrap gap-2"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <span class="me-2">✍️</span> 新增帳目
+      </div>
+      <div class="card-body">
+        <form id="addBillForm">
+          <div class="mb-3">
+            <label class="form-label text-secondary small fw-bold">消費用途</label>
+            <input type="text" id="purpose" class="form-control form-control-lg border-0 bg-light" placeholder="例如：晚餐、計程車" required />
+          </div>
+          
+          <div class="mb-3">
+            <label class="form-label text-secondary small fw-bold">金額</label>
+            <div class="input-group">
+              <span class="input-group-text border-0 bg-light fw-bold">$</span>
+              <input type="number" step="any" inputmode="decimal" id="amount" class="form-control form-control-lg border-0 bg-light" placeholder="0.00" required />
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label text-secondary small fw-bold d-block">誰付的錢？</label>
+            <div id="payerGroup" class="d-flex flex-wrap gap-2">
+              </div>
+          </div>
+
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <label class="form-label text-secondary small fw-bold mb-0">包含哪些人？</label>
+              <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-link text-decoration-none p-0 me-3" onclick="selectAllIncluded(true)">全選</button>
+                <button type="button" class="btn btn-link text-decoration-none p-0" onclick="selectAllIncluded(false)">清空</button>
+              </div>
+            </div>
+            <div id="includedGroup" class="d-flex flex-wrap gap-2">
+              </div>
+          </div>
+
+          <button type="submit" class="btn btn-success w-100 btn-lg fw-bold shadow-sm py-3">
+            新增這筆帳目
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-lg">
+      <div class="card-header bg-primary text-white d-flex align-items-center">
+        <span class="me-2">📊</span> 結算建議
+      </div>
+      <div class="card-body p-0">
+        <ul id="settlementList" class="list-group list-group-flush">
+          </ul>
+        <div class="p-3 bg-light">
+          <button id="copyBtn" class="btn btn-dark w-100 fw-bold py-2 rounded-3">
+            📋 複製結算文字到 LINE
+          </button>
         </div>
+      </div>
     </div>
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white fw-bold">✍️ 新增帳目</div>
-        <div class="card-body">
-            <form id="addBillForm">
-                <div class="mb-3">
-                    <label class="form-label text-muted small">消費用途</label>
-                    <input type="text" id="purpose" class="form-control" placeholder="例如：午餐、車資" required />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label text-muted small">金額</label>
-                    <input type="number" step="any" id="amount" class="form-control" placeholder="0.00" required />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label text-muted small d-block">誰付的錢？</label>
-                    <div id="payerGroup" class="d-flex flex-wrap gap-2"></div>
-                </div>
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <label class="form-label text-muted small mb-0">包含哪些人？</label>
-                        <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" onclick="selectAllIncluded(true)">全選</button>
-                    </div>
-                    <div id="includedGroup" class="d-flex flex-wrap gap-2"></div>
-                </div>
-                <button type="submit" class="btn btn-success w-100 btn-lg">新增帳目</button>
-            </form>
-        </div>
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <span class="me-2">📜</span> 帳目明細
+      </div>
+      <div class="card-body p-0">
+        <ul id="billsList" class="list-group list-group-flush">
+          </ul>
+      </div>
     </div>
 
-    <div id="resultSection">...</div>
-</div>
+    <footer class="text-center text-muted small mt-4 mb-5">
+      AA Split Helper © 2026
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('SW Registered'))
+          .catch(err => console.log('SW Error:', err));
+      });
+    }
+  </script>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
