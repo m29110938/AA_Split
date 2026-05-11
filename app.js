@@ -16,167 +16,95 @@
     };
   });
 
-  // 工具：操作物件庫
-  function tx(storeName, mode = 'readonly') {
-    return db.transaction(storeName, mode).objectStore(storeName);
-  }
-
-  // 新增人員
-  async function addPerson(name) {
-    if (!name.trim()) return;
-    const store = tx('people', 'readwrite');
-    try {
-      await store.add({ name: name.trim() });
-    } catch {
-      alert('此人員已存在');
-    }
-    await refreshUI();
-  }
-
-  // 讀取人員列表
-  async function getPeople() {
-    const store = tx('people');
-    return new Promise(res => {
-      const items = [];
-      const cursor = store.openCursor();
-      cursor.onsuccess = e => {
-        const c = e.target.result;
-        if (c) {
-          items.push(c.value);
-          c.continue();
-        } else {
-          res(items);
-        }
-      };
-    });
-  }
-
-  // 新增帳目
-  async function addBill(bill) {
-    if (!bill.purpose || bill.amount <= 0 || !bill.payer || bill.included.length === 0) {
-      alert('請完整填寫帳目資料');
-      return;
-    }
+  // 工具：新增刪除帳目的功能
+  async function deleteBill(id) {
     const store = tx('bills', 'readwrite');
-    await store.add(bill);
+    await store.delete(id);
     await refreshUI();
   }
 
-  // 讀取所有帳目
-  async function getBills() {
-    const store = tx('bills');
-    return new Promise(res => {
-      const items = [];
-      const cursor = store.openCursor();
-      cursor.onsuccess = e => {
-        const c = e.target.result;
-        if (c) {
-          items.push(c.value);
-          c.continue();
-        } else {
-          res(items);
-        }
-      };
-    });
+  // 工具：新增清空所有資料的功能 (Reset)
+  async function clearAllData() {
+    if (!confirm('確定要清空所有人員與帳目嗎？')) return;
+    const pStore = tx('people', 'readwrite');
+    const bStore = tx('bills', 'readwrite');
+    await pStore.clear();
+    await bStore.clear();
+    await refreshUI();
   }
 
-  // 分帳計算
-  function calculateSettlement(people, bills) {
-    const balance = {};
-    people.forEach(p => (balance[p.name] = 0));
+  // UI 優化：全選/取消全選包含人員
+  window.toggleAllIncluded = (checked) => {
+    const checkboxes = document.querySelectorAll('input[name="included[]"]');
+    checkboxes.forEach(cb => cb.checked = checked);
+  };
 
-    bills.forEach(b => {
-      const share = b.amount / b.included.length;
-      b.included.forEach(p => {
-        if (p !== b.payer) {
-          balance[p] -= share;
-          balance[b.payer] += share;
-        }
-      });
-    });
-
-    const owes = [];
-    const gains = [];
-    for (const p in balance) {
-      const amt = balance[p];
-      if (amt < -0.01) owes.push({ name: p, amt: -amt });
-      else if (amt > 0.01) gains.push({ name: p, amt });
-    }
-
-    const settlement = [];
-    while (owes.length && gains.length) {
-      owes.sort((a, b) => b.amt - a.amt);
-      gains.sort((a, b) => b.amt - a.amt);
-      const o = owes[0];
-      const g = gains[0];
-      const pay = Math.min(o.amt, g.amt);
-      settlement.push(`${o.name} 付 ${pay.toFixed(2)} 給 ${g.name}`);
-      o.amt -= pay;
-      g.amt -= pay;
-      if (o.amt < 0.01) owes.shift();
-      if (g.amt < 0.01) gains.shift();
-    }
-
-    return { balance, settlement };
-  }
-
-  // 更新 UI
+  // 強化版更新 UI
   async function refreshUI() {
     const people = await getPeople();
     const bills = await getBills();
-    // 更新人員列表
+
+    // 1. 更新人員列表 (增加刪除按鈕感)
     const peopleList = document.getElementById('peopleList');
-    peopleList.innerHTML = people.map(p => `<li>${p.name}</li>`).join('');
+    peopleList.innerHTML = people.map(p => 
+      `<li class="list-group-item d-flex justify-content-between align-items-center">${p.name}</li>`
+    ).join('');
 
-    // 更新付款人選單
+    // 2. 更新付款人選單
     const payerSelect = document.getElementById('payerSelect');
-    payerSelect.innerHTML = '<option value="">選擇付款人</option>' + people.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    payerSelect.innerHTML = '<option value="">選擇付款人</option>' + 
+      people.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
 
-    // 更新包含人員checkbox群組
+    // 3. 更新包含人員 (增加「全選」快捷鍵)
     const includedGroup = document.getElementById('includedGroup');
-    includedGroup.innerHTML = people.map(p => `
-      <input type="checkbox" class="btn-check" name="included[]" value="${p.name}" id="check_${p.name}">
-      <label class="btn btn-outline-primary" for="check_${p.name}">${p.name}</label>
+    includedGroup.innerHTML = `
+      <div class="mb-2 w-100">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllIncluded(true)">全選</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllIncluded(false)">清空</button>
+      </div>
+    ` + people.map(p => `
+      <input type="checkbox" class="btn-check" name="included[]" value="${p.name}" id="check_${p.name}" checked>
+      <label class="btn btn-outline-primary m-1" for="check_${p.name}">${p.name}</label>
     `).join('');
 
-    // 更新帳目列表
+    // 4. 更新帳目列表 (加入刪除功能與視覺優化)
     const billsList = document.getElementById('billsList');
-    if (bills.length === 0) billsList.innerHTML = '<li>無帳目資料</li>';
-    else billsList.innerHTML = bills.map(b => `<li>${b.time} - ${b.purpose}：${b.amount}，付款人：${b.payer}，包含：${b.included.join(', ')}</li>`).join('');
+    if (bills.length === 0) {
+      billsList.innerHTML = '<li class="list-group-item text-muted">目前無帳目</li>';
+    } else {
+      billsList.innerHTML = bills.map(b => `
+        <li class="list-group-item d-flex justify-content-between align-items-start">
+          <div class="ms-2 me-auto">
+            <div class="fw-bold">${b.purpose} - $${b.amount}</div>
+            <small class="text-muted">${b.payer} 支付 | 成員: ${b.included.join(', ')}</small>
+          </div>
+          <button class="btn btn-sm btn-outline-danger border-0" onclick="window.deleteBill(${b.id})">✕</button>
+        </li>
+      `).join('');
+    }
 
-    // 計算還款結果並顯示
+    // 5. 計算並顯示建議 (加入一鍵複製)
     const { balance, settlement } = calculateSettlement(people, bills);
-
-    const balanceList = document.getElementById('balanceList');
-    balanceList.innerHTML = Object.entries(balance).map(([p, amt]) => `<li>${p}: ${amt.toFixed(2)}</li>`).join('');
-
     const settlementList = document.getElementById('settlementList');
-    settlementList.innerHTML = settlement.length > 0 ? settlement.map(s => `<li>${s}</li>`).join('') : '<li>無需還款</li>';
+    
+    if (settlement.length > 0) {
+      settlementList.innerHTML = settlement.map(s => `<li class="list-group-item">${s}</li>`).join('');
+      const copyBtn = `<button class="btn btn-sm btn-dark mt-2 w-100" onclick="window.copyResults()">📋 複製還款建議</button>`;
+      settlementList.innerHTML += copyBtn;
+    } else {
+      settlementList.innerHTML = '<li class="list-group-item">無需還款</li>';
+    }
+
+    // 將函數暴露給全域環境
+    window.deleteBill = deleteBill;
+    window.copyResults = () => {
+      const text = settlement.join('\n');
+      navigator.clipboard.writeText(`💰 AA 分帳結果：\n${text}`).then(() => alert('已複製到剪貼簿'));
+    };
   }
 
-  // 綁定新增人員表單事件
-  document.getElementById('addPersonForm').onsubmit = async e => {
-    e.preventDefault();
-    const input = document.getElementById('personName');
-    await addPerson(input.value);
-    input.value = '';
-  };
-
-  // 綁定新增帳目表單事件
-  document.getElementById('addBillForm').onsubmit = async e => {
-    e.preventDefault();
-    const purpose = document.getElementById('purpose').value.trim();
-    const amount = parseFloat(document.getElementById('amount').value);
-    const payer = document.getElementById('payerSelect').value;
-    const includedCheckboxes = document.querySelectorAll('input[name="included[]"]:checked');
-    const included = Array.from(includedCheckboxes).map(cb => cb.value);
-    const time = new Date().toLocaleString();
-
-    await addBill({ purpose, amount, payer, included, time });
-
-    // reset form
-    e.target.reset();
-  };
+  // 綁定 Reset 按鈕
+  document.getElementById('resetBtn').onclick = clearAllData;
 
   // 頁面載入後初始化
   await refreshUI();
