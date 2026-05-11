@@ -1,115 +1,93 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AA制還款計算 (PWA)</title>
-
-  <!-- Bootstrap CSS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>AA 分帳小幫手</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json">
-
-  <!-- iOS 支援 -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="AA Split" />
-  <link rel="apple-touch-icon" href="icon.png" />
-
   <style>
-    body {
-      padding: 1rem;
-    }
+    :root { --primary-color: #0d6efd; }
+    body { background-color: #f8f9fa; padding-bottom: 50px; }
+    .card { border-radius: 12px; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
+    .card-header { background-color: #fff; border-bottom: 1px solid #eee; font-weight: bold; border-radius: 12px 12px 0 0 !important; }
+    .btn-check:checked + .btn-outline-primary { background-color: var(--primary-color); color: white; }
+    .list-group-item { border-left: none; border-right: none; }
+    .delete-btn { color: #dc3545; cursor: pointer; padding: 5px 10px; }
   </style>
-
 </head>
-
 <body>
-  <div class="container">
-    <h2 class="mb-4">AA制還款計算工具 (PWA)</h2>
-
-    <!-- 在頁面底部或頂部加入一個「重置」按鈕 -->
+  <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="mb-0">AA制分帳工具</h2>
-      <button id="resetBtn" class="btn btn-outline-danger btn-sm">重置資料庫</button>
+        <h2 class="h4 mb-0 text-primary">💰 AA 分帳小幫手</h2>
+        <button id="clearAllBtn" class="btn btn-outline-danger btn-sm">重置</button>
     </div>
 
-    <!-- 新增人員 -->
-    <div class="card mb-4">
-      <div class="card-header">新增人員</div>
+    <!-- 1. 人員管理 -->
+    <div class="card">
+      <div class="card-header">👥 參與人員</div>
       <div class="card-body">
-        <form id="addPersonForm" class="row g-3">
-          <div class="col-auto">
-            <input type="text" id="personName" class="form-control" placeholder="輸入姓名" required />
-          </div>
-          <div class="col-auto">
-            <button type="submit" class="btn btn-primary">新增人員</button>
-          </div>
+        <form id="addPersonForm" class="input-group mb-3">
+          <input type="text" id="personName" class="form-control" placeholder="輸入姓名" required />
+          <button type="submit" class="btn btn-primary">新增</button>
         </form>
-        <ul id="peopleList" class="mt-3 list-group"></ul>
+        <div id="peopleList" class="d-flex flex-wrap gap-2"></div>
       </div>
     </div>
 
-    <!-- 新增帳目 -->
-    <div class="card mb-4">
-      <div class="card-header">新增帳目</div>
+    <!-- 2. 新增帳目 -->
+    <div class="card">
+      <div class="card-header">✍️ 新增帳目</div>
       <div class="card-body">
         <form id="addBillForm">
           <div class="mb-3">
-            <label for="purpose" class="form-label">用途</label>
-            <input type="text" id="purpose" class="form-control" required />
+            <label class="form-label text-muted small">消費用途</label>
+            <input type="text" id="purpose" class="form-control form-control-lg" placeholder="例如：午餐、車資" required />
           </div>
           <div class="mb-3">
-            <label for="amount" class="form-label">金額</label>
-            <input type="text" inputmode="decimal" pattern="[0-9]*" id="amount" class="form-control" placeholder="請輸入金額" required />
+            <label class="form-label text-muted small">金額</label>
+            <!-- inputmode="decimal" 確保手機彈出數字鍵盤 -->
+            <input type="text" inputmode="decimal" id="amount" class="form-control form-control-lg" placeholder="0.00" required />
           </div>
           <div class="mb-3">
-            <label class="form-label">付款人</label>
-            <div id="payerButtons" class="btn-group" role="group"></div>
+            <label class="form-label text-muted small">誰付的錢？</label>
+            <div id="payerGroup" class="d-flex flex-wrap gap-2"></div>
           </div>
           <div class="mb-3">
-            <label class="form-label">包含人員</label><br />
-            <div id="includedGroup" class="btn-group" role="group"></div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label text-muted small mb-0">包含哪些人？</label>
+                <div>
+                    <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" onclick="selectAllIncluded(true)">全選</button>
+                </div>
+            </div>
+            <div id="includedGroup" class="d-flex flex-wrap gap-2"></div>
           </div>
-          <button type="submit" class="btn btn-success">新增帳目</button>
+          <button type="submit" class="btn btn-success w-100 btn-lg shadow-sm">新增帳目</button>
         </form>
       </div>
     </div>
 
-    <!-- 帳目列表 -->
-    <div class="card mb-4">
-      <div class="card-header">帳目紀錄</div>
-      <div class="card-body">
-        <ul id="billsList" class="list-group"></ul>
-      </div>
-    </div>
-
-    <!-- 還款結果 -->
-    <!-- 將原本的列表加上 list-group 樣式 -->
-    <div class="card mb-4 shadow-sm">
-      <div class="card-header bg-success text-white text-center fw-bold">還款建議</div>
+    <!-- 3. 還款建議 (最重要，移到中間) -->
+    <div class="card border-primary shadow">
+      <div class="card-header bg-primary text-white">📋 最終結算建議</div>
       <div class="card-body p-0">
         <ul id="settlementList" class="list-group list-group-flush"></ul>
+        <div class="p-3">
+            <button id="copyBtn" class="btn btn-dark w-100">📋 複製結果傳到 LINE</button>
+        </div>
       </div>
     </div>
 
-  <!-- Bootstrap JS (Popper + Bootstrap) -->
+    <!-- 4. 帳目紀錄 -->
+    <div class="card">
+      <div class="card-header">📜 帳目明細</div>
+      <div class="card-body p-0">
+        <ul id="billsList" class="list-group list-group-flush"></ul>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-  <!-- PWA Service Worker 註冊 -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('sw.js')
-        .then(() => console.log('Service Worker registered'))
-        .catch((err) => console.error('Service Worker registration failed:', err));
-    }
-  </script>
-
-  <!-- 你的 app.js -->
   <script src="app.js"></script>
 </body>
-
 </html>
